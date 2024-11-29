@@ -1,6 +1,6 @@
 streamlit
+pandas
 requests
 beautifulsoup4
-pandas
-matplotlib
 statistics
+matplotlib
