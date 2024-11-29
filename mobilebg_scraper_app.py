@@ -123,25 +123,33 @@ if base_url:
 
     # Aggregated data
     try:
-        max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-        min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-        max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
-        min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
+        # Ensure all prices are properly converted to floats
+        prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list if ' лв.' in p]
         
-        st.subheader("Aggregated Data")
-        st.write(f"**Total Listings:** {len(prices_list)}")
-        st.write(f"**Maximum Price:** {max_price} ([Link]({max_price_link}))")
-        st.write(f"**Minimum Price:** {min_price} ([Link]({min_price_link}))")
-        average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-        st.write(f"**Average Price:** {average_price:.2f} лв.")
-        median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-        st.write(f"**Median Price:** {median_price:.2f} лв.")
+        if prices_numeric:
+            max_price = f"{max(prices_numeric):.2f} лв."
+            min_price = f"{min(prices_numeric):.2f} лв."
+
+            max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
+            min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
+
+            st.subheader("Aggregated Data")
+            st.write(f"**Total Listings:** {len(prices_numeric)}")
+            st.write(f"**Maximum Price:** {max_price} ([Link]({max_price_link}))")
+            st.write(f"**Minimum Price:** {min_price} ([Link]({min_price_link}))")
+
+            average_price = statistics.mean(prices_numeric)
+            st.write(f"**Average Price:** {average_price:.2f} лв.")
+            median_price = statistics.median(prices_numeric)
+            st.write(f"**Median Price:** {median_price:.2f} лв.")
+        else:
+            st.error("No valid prices available for aggregation.")
     except Exception as e:
-        st.error("An error occurred while processing aggregated data. Please check the logs for details.")
+        st.error("An error occurred while processing aggregated data. Details have been logged.")
+        st.text(str(e))  # Display the actual exception for debugging
 
     st.subheader("Visualizations")
     
-    prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
     probeg_numeric = [float(p.replace(' км', '').replace(',', '').replace(' ', '')) for p in probeg_list if p is not None]
 
     st.write("### Price Distribution")
@@ -193,6 +201,6 @@ if base_url:
     ax.scatter(sorted_years, sorted_prices_numeric, alpha=0.7, color='blue')
     ax.set_title('Price vs. Year Correlation', fontsize=16, fontweight='bold')
     ax.set_xlabel('Year', fontsize=14, fontweight='bold')
-    ax.set_ylabel('Price (лв.)', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Price (лв.)", fontsize=14, fontweight='bold')
     ax.grid(True, linestyle='--', alpha=0.5)
     st.pyplot(fig)
