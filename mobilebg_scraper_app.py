@@ -5,34 +5,33 @@ import pandas as pd
 import statistics
 import matplotlib.pyplot as plt
 import re
-from io import BytesIO
 
-# Function to extract price
+# Streamlit app title
+st.title("Mobile.bg Web Scraper and Analysis")
+
+# User input for base URL
+base_url = st.text_input("Enter the base URL for scraping:", "https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
+headers = {'User-Agent': 'Mozilla/5.0'}
+
+# Prepare empty lists for data
+titles_list, prices_list, links_list, probeg_list, skorosti_list, dvigatel_list, moshtnost_list, year_list = [], [], [], [], [], [], [], []
+
 def extract_price(price_div):
     match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
         return None
-
     price = float(match.group(1).replace(',', '').replace(' ', ''))
     currency = match.group(2)
-
     if 'Цената е без ДДС' in price_div:
         price *= 1.2  # Add 20% VAT
-        return f"{price:.2f} лв."
-
     if currency == 'EUR':
         price *= 1.95  # EUR to BGN conversion rate
-        return f"{price:.2f} лв."
+    return price
 
-    return f"{price:.2f} лв."
-
-# Function to extract individual listing data
-def extract_individual_data(url, headers):
+def extract_individual_data(url):
     response = requests.get(url, headers=headers)
     response.encoding = 'windows-1251'
     soup = BeautifulSoup(response.text, "html.parser")
-    
-    # Extract mainCarParams data
     main_params = soup.find("div", class_="mainCarParams")
     probeg = skorosti = dvigatel = moshtnost = None
     if main_params:
@@ -47,8 +46,6 @@ def extract_individual_data(url, headers):
                 dvigatel = info
             elif label == "Мощност":
                 moshtnost = info
-    
-    # Extract year of production
     items = soup.find("div", class_="items")
     year = None
     if items:
@@ -57,56 +54,32 @@ def extract_individual_data(url, headers):
                 year_match = re.search(r"(\d{4})", item.text)
                 if year_match:
                     year = year_match.group(1)
-    
     return probeg, skorosti, dvigatel, moshtnost, year
 
-# Streamlit app starts here
-st.title("Car Listings Scraper")
-
-# User input for base URL
-base_url = st.text_input("Enter the base URL for scraping:", value="https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
-headers = {'User-Agent': 'Mozilla/5.0'}
-
-# Scrape data when the button is clicked
-if st.button("Scrape Data"):
-    titles_list = []
-    prices_list = []
-    links_list = []
-    probeg_list = []
-    skorosti_list = []
-    dvigatel_list = []
-    moshtnost_list = []
-    year_list = []
-
+if base_url:
+    # Scrape data
     page = 1
     while True:
         url = f"{base_url}/p-{page}" if page > 1 else base_url
         response = requests.get(url, headers=headers)
         response.encoding = 'windows-1251'
         soup = BeautifulSoup(response.text, "html.parser")
-
         titles = soup.find_all("a", class_="title")
         prices = soup.find_all("div", class_="price")
-
         if not titles:
             break
-
         for title, price in zip(titles, prices):
-            price_text = price.text.strip()
-            processed_price = extract_price(price_text)
-            if processed_price:
+            price_value = extract_price(price.text.strip())
+            if price_value:
                 titles_list.append(title.text.strip())
-                prices_list.append(processed_price)
+                prices_list.append(price_value)
                 links_list.append("https:" + title['href'])
-                
-                # Extract individual data
-                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], headers)
+                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'])
                 probeg_list.append(probeg)
                 skorosti_list.append(skorosti)
                 dvigatel_list.append(dvigatel)
                 moshtnost_list.append(moshtnost)
                 year_list.append(year)
-
         page += 1
 
     # Create DataFrame
@@ -121,53 +94,31 @@ if st.button("Scrape Data"):
         "Year": year_list
     })
 
-    # Display table of data
-    st.subheader("Scraped Data")
-    if not df.empty:
-        st.dataframe(df)
+    # Display raw data table
+    st.write("### Scraped Data Table", df)
 
-        # Provide download options
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        excel = BytesIO()
-        df.to_excel(excel, index=False, sheet_name="Listings")
-        excel.seek(0)
+    # Download options
+    st.download_button("Download as CSV", df.to_csv(index=False).encode('utf-8'), "data.csv", "text/csv")
+    st.download_button("Download as Excel", df.to_excel(index=False).encode('utf-8'), "data.xlsx", "application/vnd.ms-excel")
 
-        st.download_button("Download as CSV", data=csv, file_name="listings.csv", mime="text/csv")
-        st.download_button("Download as Excel", data=excel, file_name="listings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    # Aggregated data
+    st.write("### Aggregated Data")
+    max_price = max(prices_list)
+    min_price = min(prices_list)
+    st.write(f"Maximum Price: {max_price:.2f} лв.")
+    st.write(f"Minimum Price: {min_price:.2f} лв.")
+    st.write(f"Average Price: {statistics.mean(prices_list):.2f} лв.")
+    st.write(f"Median Price: {statistics.median(prices_list):.2f} лв.")
 
-        # Aggregated data
-        st.subheader("Aggregated Data")
-        if prices_list:
-            max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-            min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-            max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
-            min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
+    # Visualizations
+    st.write("### Visualizations")
 
-            st.write(f"Total Listings: {len(prices_list)}")
-            st.write(f"Maximum Price: {max_price} (Link: [View Listing]({max_price_link}))")
-            st.write(f"Minimum Price: {min_price} (Link: [View Listing]({min_price_link}))")
-            average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-            median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-            st.write(f"Average Price: {average_price:.2f} лв.")
-            st.write(f"Median Price: {median_price:.2f} лв.")
+    # Histogram
+    st.bar_chart(df['Price (лв.)'])
 
-        else:
-            st.write("No price data available for aggregation.")
+    # Pie chart
+    st.write("#### Listings by Скоростна кутия")
+    st.bar_chart(df["Скоростна кутия"].value_counts())
 
-        # Visualization
-        st.subheader("Visualizations")
-        if year_list and prices_list:
-            sorted_data = sorted(zip(year_list, prices_list), key=lambda x: x[0])
-            sorted_years, sorted_prices = zip(*sorted_data)
-            sorted_prices_numeric = [float(price.replace(' лв.', '').replace(',', '')) for price in sorted_prices]
-
-            fig, ax = plt.subplots()
-            ax.scatter(sorted_years, sorted_prices_numeric)
-            ax.set_title("Price vs Year")
-            ax.set_xlabel("Year")
-            ax.set_ylabel("Price (лв.)")
-            st.pyplot(fig)
-        else:
-            st.write("Not enough data for visualizations.")
-    else:
-        st.write("No data found. Please check the base URL.")
+    st.write("#### Listings by Двигател")
+    st.bar_chart(df["Двигател"].value_counts())
