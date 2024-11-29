@@ -137,15 +137,47 @@ if base_url:
     # Aggregated Data
     st.header("Aggregated Data")
     if prices_list:
-        max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-        min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-        average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-        median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+        prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
+        max_price = max(prices_numeric)
+        min_price = min(prices_numeric)
+        average_price = statistics.mean(prices_numeric)
+        median_price = statistics.median(prices_numeric)
 
         st.write(f"Total Listings: {len(prices_list)}")
-        st.write(f"Maximum Price: {max_price}")
-        st.write(f"Minimum Price: {min_price}")
+        st.write(f"Maximum Price: {max_price:.2f} лв.")
+        st.write(f"Minimum Price: {min_price:.2f} лв.")
         st.write(f"Average Price: {average_price:.2f} лв.")
         st.write(f"Median Price: {median_price:.2f} лв.")
     else:
         st.warning("No data available to calculate aggregated values.")
+
+    # Visualization
+    st.header("Visualizations")
+
+    # Histogram for prices
+    if prices_list:
+        st.subheader("Price Distribution")
+        plt.figure(figsize=(10, 5))
+        plt.hist(prices_numeric, bins=20, edgecolor='black')
+        plt.title("Price Distribution")
+        plt.xlabel("Price (лв.)")
+        plt.ylabel("Frequency")
+        st.pyplot(plt)
+
+    # Pie chart for transmission types
+    if skorosti_list:
+        st.subheader("Listings by Transmission Type")
+        skorosti_counts = pd.Series(skorosti_list).value_counts()
+        plt.figure(figsize=(6, 6))
+        plt.pie(skorosti_counts, labels=skorosti_counts.index, autopct='%1.1f%%', startangle=140)
+        plt.title("Transmission Types")
+        st.pyplot(plt)
+
+    # Pie chart for engine types
+    if dvigatel_list:
+        st.subheader("Listings by Engine Type")
+        dvigatel_counts = pd.Series(dvigatel_list).value_counts()
+        plt.figure(figsize=(6, 6))
+        plt.pie(dvigatel_counts, labels=dvigatel_counts.index, autopct='%1.1f%%', startangle=140)
+        plt.title("Engine Types")
+        st.pyplot(plt)
