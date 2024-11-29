@@ -122,30 +122,35 @@ if base_url:
     st.write("### Scraped Data")
     st.dataframe(df)
 
-    # Aggregated data
-    prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
-    max_price = max(prices_numeric)
-    min_price = min(prices_numeric)
-    average_price = statistics.mean(prices_numeric)
-    median_price = statistics.median(prices_numeric)
+    if prices_list:
+        # Convert prices to numeric
+        prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
 
-    st.write("### Aggregated Data")
-    st.write(f"Total Listings: {len(prices_list)}")
-    st.write(f"Maximum Price: {max_price:.2f} лв.")
-    st.write(f"Minimum Price: {min_price:.2f} лв.")
-    st.write(f"Average Price: {average_price:.2f} лв.")
-    st.write(f"Median Price: {median_price:.2f} лв.")
+        # Aggregated data
+        max_price = max(prices_numeric)
+        min_price = min(prices_numeric)
+        average_price = statistics.mean(prices_numeric)
+        median_price = statistics.median(prices_numeric)
 
-    # Visualization
-    st.write("### Visualizations")
-    st.bar_chart(pd.Series(prices_numeric, name="Price Distribution"))
+        st.write("### Aggregated Data")
+        st.write(f"Total Listings: {len(prices_list)}")
+        st.write(f"Maximum Price: {max_price:.2f} лв.")
+        st.write(f"Minimum Price: {min_price:.2f} лв.")
+        st.write(f"Average Price: {average_price:.2f} лв.")
+        st.write(f"Median Price: {median_price:.2f} лв.")
 
-    if len(skorosti_list) > 0:
-        skorosti_counts = pd.Series(skorosti_list).value_counts()
-        st.write("#### Скоростна кутия Distribution")
-        st.bar_chart(skorosti_counts)
+        # Visualization
+        st.write("### Visualizations")
+        st.bar_chart(pd.Series(prices_numeric, name="Price Distribution"))
 
-    if len(dvigatel_list) > 0:
-        dvigatel_counts = pd.Series(dvigatel_list).value_counts()
-        st.write("#### Двигател Distribution")
-        st.bar_chart(dvigatel_counts)
+        if len(skorosti_list) > 0:
+            skorosti_counts = pd.Series(skorosti_list).value_counts()
+            st.write("#### Скоростна кутия Distribution")
+            st.bar_chart(skorosti_counts)
+
+        if len(dvigatel_list) > 0:
+            dvigatel_counts = pd.Series(dvigatel_list).value_counts()
+            st.write("#### Двигател Distribution")
+            st.bar_chart(dvigatel_counts)
+    else:
+        st.warning("No listings found to calculate aggregated data or display visualizations.")
