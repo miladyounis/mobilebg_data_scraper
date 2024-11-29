@@ -2,11 +2,12 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import re
 import statistics
 import matplotlib.pyplot as plt
+import re
+from io import BytesIO
 
-# Helper functions
+# Function to extract price
 def extract_price(price_div):
     match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
@@ -25,11 +26,13 @@ def extract_price(price_div):
 
     return f"{price:.2f} лв."
 
+# Function to extract individual listing data
 def extract_individual_data(url, headers):
     response = requests.get(url, headers=headers)
     response.encoding = 'windows-1251'
     soup = BeautifulSoup(response.text, "html.parser")
     
+    # Extract mainCarParams data
     main_params = soup.find("div", class_="mainCarParams")
     probeg = skorosti = dvigatel = moshtnost = None
     if main_params:
@@ -45,6 +48,7 @@ def extract_individual_data(url, headers):
             elif label == "Мощност":
                 moshtnost = info
     
+    # Extract year of production
     items = soup.find("div", class_="items")
     year = None
     if items:
@@ -56,15 +60,15 @@ def extract_individual_data(url, headers):
     
     return probeg, skorosti, dvigatel, moshtnost, year
 
-# Streamlit app
-st.title("Car Listings Web Scraper")
-st.markdown("This app scrapes car listings from the specified base URL and provides insights with visualizations and a downloadable dataset.")
+# Streamlit app starts here
+st.title("Car Listings Scraper")
 
-base_url = st.text_input("Enter the base URL for the car listings:", placeholder="e.g., https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
+# User input for base URL
+base_url = st.text_input("Enter the base URL for scraping:", value="https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
+headers = {'User-Agent': 'Mozilla/5.0'}
 
-if base_url:
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
+# Scrape data when the button is clicked
+if st.button("Scrape Data"):
     titles_list = []
     prices_list = []
     links_list = []
@@ -94,6 +98,8 @@ if base_url:
                 titles_list.append(title.text.strip())
                 prices_list.append(processed_price)
                 links_list.append("https:" + title['href'])
+                
+                # Extract individual data
                 probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], headers)
                 probeg_list.append(probeg)
                 skorosti_list.append(skorosti)
@@ -103,6 +109,7 @@ if base_url:
 
         page += 1
 
+    # Create DataFrame
     df = pd.DataFrame({
         "Title": titles_list,
         "Price (лв.)": prices_list,
@@ -114,98 +121,40 @@ if base_url:
         "Year": year_list
     })
 
+    # Display table of data
     st.subheader("Scraped Data")
     st.dataframe(df)
 
-    csv = df.to_csv(index=False, encoding='utf-8-sig')
-    st.download_button(label="Download CSV", data=csv, file_name='car_listings.csv', mime='text/csv')
+    # Provide download options
+    csv = df.to_csv(index=False).encode('utf-8-sig')
+    excel = BytesIO()
+    df.to_excel(excel, index=False, sheet_name="Listings")
+    excel.seek(0)
 
-    # Convert price strings to numeric for calculations
-    prices_numeric = []
-    for price in prices_list:
-        try:
-            numeric_price = float(price.replace(' лв.', '').replace(',', ''))
-            prices_numeric.append(numeric_price)
-        except ValueError:
-            continue
+    st.download_button("Download as CSV", data=csv, file_name="listings.csv", mime="text/csv")
+    st.download_button("Download as Excel", data=excel, file_name="listings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     # Aggregated data
-    if prices_numeric:
-        max_price = max(prices_numeric)
-        min_price = min(prices_numeric)
-        max_price_link = df[df["Price (лв.)"].astype(str) == f"{max_price:.2f} лв."]["Link"].values[0]
-        min_price_link = df[df["Price (лв.)"].astype(str) == f"{min_price:.2f} лв."]["Link"].values[0]
+    max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+    min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+    max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
+    min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
 
-        st.subheader("Aggregated Data")
-        st.write(f"**Total Listings:** {len(prices_list)}")
-        st.write(f"**Maximum Price:** {max_price:.2f} лв. ([Link]({max_price_link}))")
-        st.write(f"**Minimum Price:** {min_price:.2f} лв. ([Link]({min_price_link}))")
-        average_price = statistics.mean(prices_numeric)
-        st.write(f"**Average Price:** {average_price:.2f} лв.")
-        median_price = statistics.median(prices_numeric)
-        st.write(f"**Median Price:** {median_price:.2f} лв.")
+    st.subheader("Aggregated Data")
+    st.write(f"Total Listings: {len(prices_list)}")
+    st.write(f"Maximum Price: {max_price} (Link: [View Listing]({max_price_link}))")
+    st.write(f"Minimum Price: {min_price} (Link: [View Listing]({min_price_link}))")
+    average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+    median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+    st.write(f"Average Price: {average_price:.2f} лв.")
+    st.write(f"Median Price: {median_price:.2f} лв.")
 
+    # Visualization
     st.subheader("Visualizations")
-
-    if prices_numeric:
-        st.write("### Price Distribution")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(prices_numeric, bins=20, edgecolor='black', color="#0070F2")
-        ax.set_title('Price Distribution', fontsize=16, fontweight='bold')
-        ax.set_xlabel('Price (лв.)', fontsize=14, fontweight='bold')
-        ax.set_ylabel('Frequency', fontsize=14, fontweight='bold')
-        st.pyplot(fig)
-
-    # Listings by Скоростна кутия
-    st.write("### Listings by Скоростна кутия")
-    skorosti_counts = pd.Series(skorosti_list).value_counts()
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.pie(skorosti_counts, labels=skorosti_counts.index, autopct='%1.1f%%', startangle=140)
-    ax.set_title("Listings by Скоростна кутия", fontsize=14, fontweight='bold')
+    st.write("### Price Distribution")
+    fig, ax = plt.subplots()
+    ax.hist([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list], bins=20, edgecolor='black')
+    ax.set_title("Price Distribution")
+    ax.set_xlabel("Price (лв.)")
+    ax.set_ylabel("Frequency")
     st.pyplot(fig)
-
-    # Listings by Двигател
-    st.write("### Listings by Двигател")
-    dvigatel_counts = pd.Series(dvigatel_list).value_counts()
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.pie(dvigatel_counts, labels=dvigatel_counts.index, autopct='%1.1f%%', startangle=140)
-    ax.set_title("Listings by Двигател", fontsize=14, fontweight='bold')
-    st.pyplot(fig)
-
-    # Price vs. Mileage
-    probeg_numeric = [float(p.replace(' км', '').replace(',', '').replace(' ', '')) for p in probeg_list if p is not None]
-    if prices_numeric and probeg_numeric:
-        st.write("### Price vs. Mileage")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.scatter(probeg_numeric, prices_numeric[:len(probeg_numeric)], alpha=0.7)
-        ax.set_title("Price vs. Mileage", fontsize=16, fontweight='bold')
-        ax.set_xlabel("Mileage (km)", fontsize=14, fontweight='bold')
-        ax.set_ylabel("Price (лв.)", fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig)
-
-    # Number of Cars per Year
-    year_counts = pd.Series(year_list).value_counts().sort_index()
-    if not year_counts.empty:
-        st.write("### Number of Cars per Year")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.bar(year_counts.index, year_counts.values, color='skyblue', edgecolor='black')
-        ax.set_title('Number of Cars per Year', fontsize=16, fontweight='bold')
-        ax.set_xlabel('Year', fontsize=14, fontweight='bold')
-        ax.set_ylabel('Number of Cars', fontsize=14, fontweight='bold')
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        st.pyplot(fig)
-
-    # Price vs. Year Correlation
-    sorted_data = sorted(zip(year_list, prices_list), key=lambda x: (int(x[0]), float(x[1].replace(' лв.', '').replace(',', ''))))
-    sorted_years, sorted_prices = zip(*sorted_data)
-    sorted_prices_numeric = [float(price.replace(' лв.', '').replace(',', '')) for price in sorted_prices]
-    if sorted_prices_numeric:
-        st.write("### Price vs. Year Correlation")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.scatter(sorted_years, sorted_prices_numeric, alpha=0.7, color='blue')
-        ax.set_title('Price vs. Year Correlation', fontsize=16, fontweight='bold')
-        ax.set_xlabel('Year', fontsize=14, fontweight='bold')
-        ax.set_ylabel('Price (лв.)', fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig)
