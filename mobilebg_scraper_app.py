@@ -201,6 +201,7 @@ if base_url:
     ax.scatter(sorted_years, sorted_prices_numeric, alpha=0.7, color='blue')
     ax.set_title('Price vs. Year Correlation', fontsize=16, fontweight='bold')
     ax.set_xlabel('Year', fontsize=14, fontweight='bold')
-    ax.set_ylabel('Price (лв.)", fontsize=14, fontweight='bold')
+    ax.set_ylabel('Price (лв.)', fontsize=14, fontweight='bold')
     ax.grid(True, linestyle='--', alpha=0.5)
     st.pyplot(fig)
+
