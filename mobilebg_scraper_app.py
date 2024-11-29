@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 
-# Function to extract price
+# Define functions
 def extract_price(price_div):
     match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
@@ -19,38 +19,60 @@ def extract_price(price_div):
         return f"{price:.2f} лв."
     return f"{price:.2f} лв."
 
-# Function to extract individual data
-def extract_individual_data(url):
-    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    soup = BeautifulSoup(response.content, 'html.parser')
-    details = soup.find_all("div", {"class": "some-detail-class"})  # Adjust the class as per requirement
-    # Add your data extraction logic here
-    return details
+def extract_individual_data(url, headers):
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
+    data = {
+        "titles_list": soup.find('h1').get_text(strip=True),
+        "probeg_list": soup.find(text=re.compile("Пробег")).parent.parent.find('td').get_text(strip=True),
+        "skorosti_list": soup.find(text=re.compile("Скорости")).parent.parent.find('td').get_text(strip=True),
+        "dvigatel_list": soup.find(text=re.compile("Двигател")).parent.parent.find('td').get_text(strip=True),
+        "moshtnost_list": soup.find(text=re.compile("Мощност")).parent.parent.find('td').get_text(strip=True),
+        "year_list": soup.find(text=re.compile("Година")).parent.parent.find('td').get_text(strip=True),
+    }
+    return data
 
-# Main Streamlit app
-def main():
-    st.title("Mobile Scraping App")
-    st.write("Enter the base URL of the mobile.bg site to scrape data.")
-    
-    # User input for the base URL
-    base_url = st.text_input("Base URL", value="https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
-    
-    if st.button("Start Scraping"):
-        if not base_url:
-            st.error("Please enter a valid URL.")
-        else:
-            try:
-                # Placeholder: Call scraping functions and display results
-                response = requests.get(base_url, headers={'User-Agent': 'Mozilla/5.0'})
-                soup = BeautifulSoup(response.content, 'html.parser')
-                
-                titles = [item.text for item in soup.find_all("h2", {"class": "title-class"})]  # Adjust selectors
-                prices = [extract_price(item.text) for item in soup.find_all("div", {"class": "price-class"})]
-                
-                data = pd.DataFrame({"Title": titles, "Price": prices})
-                st.write(data)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+# Streamlit interface
+st.title("Mobile.bg Web Scraper")
 
-if __name__ == "__main__":
-    main()
+# Input
+base_url = st.text_input("Enter the Base URL:", placeholder="https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
+headers = {'User-Agent': 'Mozilla/5.0'}
+
+if st.button("Start Scraping"):
+    if not base_url:
+        st.error("Please provide a valid URL.")
+    else:
+        try:
+            response = requests.get(base_url, headers=headers)
+            soup = BeautifulSoup(response.content, "html.parser")
+            
+            titles_list, prices_list, links_list = [], [], []
+            
+            for listing in soup.find_all('div', class_='listing-item'):
+                title = listing.find('a').get_text(strip=True)
+                link = listing.find('a')['href']
+                price_div = listing.find('div', class_='price').get_text(strip=True)
+                
+                titles_list.append(title)
+                prices_list.append(extract_price(price_div))
+                links_list.append(link)
+            
+            # Display results
+            results = pd.DataFrame({
+                "Title": titles_list,
+                "Price": prices_list,
+                "Link": links_list,
+            })
+            st.dataframe(results)
+            
+            # Downloadable file
+            csv = results.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="scraped_data.csv",
+                mime="text/csv"
+            )
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
