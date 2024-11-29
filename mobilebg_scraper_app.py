@@ -97,10 +97,6 @@ if base_url:
     # Display raw data table
     st.write("### Scraped Data Table", df)
 
-    # Download options
-    st.download_button("Download as CSV", df.to_csv(index=False).encode('utf-8'), "data.csv", "text/csv")
-    st.download_button("Download as Excel", df.to_excel(index=False).encode('utf-8'), "data.xlsx", "application/vnd.ms-excel")
-
     # Aggregated data
     st.write("### Aggregated Data")
     max_price = max(prices_list)
