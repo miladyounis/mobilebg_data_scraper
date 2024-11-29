@@ -8,22 +8,23 @@ import matplotlib.pyplot as plt
 
 # Helper functions
 def extract_price(price_div):
-    match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
-    if not match:
+    try:
+        match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
+        if not match:
+            return None
+
+        price = float(match.group(1).replace(',', '').replace(' ', ''))
+        currency = match.group(2)
+
+        if 'Цената е без ДДС' in price_div:
+            price *= 1.2  # Add 20% VAT
+        if currency == 'EUR':
+            price *= 1.95  # EUR to BGN conversion rate
+        
+        return f"{price:.2f} лв."
+    except Exception as e:
+        # Log the exception in a way that doesn't disrupt local results
         return None
-
-    price = float(match.group(1).replace(',', '').replace(' ', ''))
-    currency = match.group(2)
-
-    if 'Цената е без ДДС' in price_div:
-        price *= 1.2  # Add 20% VAT
-        return f"{price:.2f} лв."
-
-    if currency == 'EUR':
-        price *= 1.95  # EUR to BGN conversion rate
-        return f"{price:.2f} лв."
-
-    return f"{price:.2f} лв."
 
 def extract_individual_data(url, headers):
     response = requests.get(url, headers=headers)
@@ -121,19 +122,22 @@ if base_url:
     st.download_button(label="Download CSV", data=csv, file_name='car_listings.csv', mime='text/csv')
 
     # Aggregated data
-    max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
-    min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
-
-    st.subheader("Aggregated Data")
-    st.write(f"**Total Listings:** {len(prices_list)}")
-    st.write(f"**Maximum Price:** {max_price} ([Link]({max_price_link}))")
-    st.write(f"**Minimum Price:** {min_price} ([Link]({min_price_link}))")
-    average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    st.write(f"**Average Price:** {average_price:.2f} лв.")
-    median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    st.write(f"**Median Price:** {median_price:.2f} лв.")
+    try:
+        max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+        min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+        max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
+        min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
+        
+        st.subheader("Aggregated Data")
+        st.write(f"**Total Listings:** {len(prices_list)}")
+        st.write(f"**Maximum Price:** {max_price} ([Link]({max_price_link}))")
+        st.write(f"**Minimum Price:** {min_price} ([Link]({min_price_link}))")
+        average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+        st.write(f"**Average Price:** {average_price:.2f} лв.")
+        median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+        st.write(f"**Median Price:** {median_price:.2f} лв.")
+    except Exception as e:
+        st.error("An error occurred while processing aggregated data. Please check the logs for details.")
 
     st.subheader("Visualizations")
     
