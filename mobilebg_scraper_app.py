@@ -5,10 +5,12 @@ import pandas as pd
 import statistics
 import matplotlib.pyplot as plt
 import re
+from requests.exceptions import RequestException
+import time
 
 # Function to extract price
 def extract_price(price_div):
-    match = re.search(r'(\\d+[\\s,]?\\d*)\\s*(лв\\.|EUR)', price_div)
+    match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
         return None
     price = float(match.group(1).replace(',', '').replace(' ', ''))
@@ -23,10 +25,14 @@ def extract_price(price_div):
 
 # Function to extract individual page data
 def extract_individual_data(url, headers):
-    response = requests.get(url, headers=headers)
-    response.encoding = 'windows-1251'
-    soup = BeautifulSoup(response.text, "html.parser")
-    
+    try:
+        response = requests.get(url, headers=headers)
+        response.encoding = 'windows-1251'
+        soup = BeautifulSoup(response.text, "html.parser")
+    except RequestException as e:
+        st.warning(f"Failed to fetch individual data from {url}. Error: {e}")
+        return None, None, None, None, None
+
     # Extract mainCarParams data
     main_params = soup.find("div", class_="mainCarParams")
     probeg = skorosti = dvigatel = moshtnost = None
@@ -49,7 +55,7 @@ def extract_individual_data(url, headers):
     if items:
         for item in items.find_all("div", class_="item"):
             if "Дата на производство" in item.text:
-                year_match = re.search(r"(\\d{4})", item.text)
+                year_match = re.search(r"(\d{4})", item.text)
                 if year_match:
                     year = year_match.group(1)
     
@@ -72,14 +78,25 @@ if base_url:
     page = 1
     while True:
         url = f"{base_url}/p-{page}" if page > 1 else base_url
-        response = requests.get(url, headers=headers)
-        response.encoding = 'windows-1251'
+        for attempt in range(3):  # Retry logic
+            try:
+                response = requests.get(url, headers=headers)
+                response.encoding = 'windows-1251'
+                if response.status_code == 200:
+                    break
+            except RequestException as e:
+                if attempt == 2:
+                    st.error(f"Failed to connect to {url}. Error: {e}")
+                    break
+                time.sleep(2)
+
         soup = BeautifulSoup(response.text, "html.parser")
         
         titles = soup.find_all("a", class_="title")
         prices = soup.find_all("div", class_="price")
         
-        if not titles:
+        if not titles or not prices:
+            st.warning("No listings found on this page. Please check the base URL or try again later.")
             break
         
         for title, price in zip(titles, prices):
@@ -119,13 +136,16 @@ if base_url:
 
     # Aggregated Data
     st.header("Aggregated Data")
-    max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    
-    st.write(f"Total Listings: {len(prices_list)}")
-    st.write(f"Maximum Price: {max_price}")
-    st.write(f"Minimum Price: {min_price}")
-    st.write(f"Average Price: {average_price:.2f} лв.")
-    st.write(f"Median Price: {median_price:.2f} лв.")
+    if prices_list:
+        max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+        min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+        average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+        median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+
+        st.write(f"Total Listings: {len(prices_list)}")
+        st.write(f"Maximum Price: {max_price}")
+        st.write(f"Minimum Price: {min_price}")
+        st.write(f"Average Price: {average_price:.2f} лв.")
+        st.write(f"Median Price: {median_price:.2f} лв.")
+    else:
+        st.warning("No data available to calculate aggregated values.")
