@@ -2,11 +2,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import statistics
-import matplotlib.pyplot as plt
 import re
-from requests.exceptions import RequestException
-import time
 
 # Function to extract price
 def extract_price(price_div):
@@ -23,161 +19,38 @@ def extract_price(price_div):
         return f"{price:.2f} лв."
     return f"{price:.2f} лв."
 
-# Function to extract individual page data
-def extract_individual_data(url, headers):
-    try:
-        response = requests.get(url, headers=headers)
-        response.encoding = 'windows-1251'
-        soup = BeautifulSoup(response.text, "html.parser")
-    except RequestException as e:
-        st.warning(f"Failed to fetch individual data from {url}. Error: {e}")
-        return None, None, None, None, None
+# Function to extract individual data
+def extract_individual_data(url):
+    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    soup = BeautifulSoup(response.content, 'html.parser')
+    details = soup.find_all("div", {"class": "some-detail-class"})  # Adjust the class as per requirement
+    # Add your data extraction logic here
+    return details
 
-    # Extract mainCarParams data
-    main_params = soup.find("div", class_="mainCarParams")
-    probeg = skorosti = dvigatel = moshtnost = None
-    if main_params:
-        for item in main_params.find_all("div", class_="item"):
-            label = item.find("div", class_="mpLabel").text.strip()
-            info = item.find("div", class_="mpInfo").text.strip()
-            if label == "Пробег [км]":
-                probeg = info
-            elif label == "Скоростна кутия":
-                skorosti = info
-            elif label == "Двигател":
-                dvigatel = info
-            elif label == "Мощност":
-                moshtnost = info
+# Main Streamlit app
+def main():
+    st.title("Mobile Scraping App")
+    st.write("Enter the base URL of the mobile.bg site to scrape data.")
     
-    # Extract year of production
-    items = soup.find("div", class_="items")
-    year = None
-    if items:
-        for item in items.find_all("div", class_="item"):
-            if "Дата на производство" in item.text:
-                year_match = re.search(r"(\d{4})", item.text)
-                if year_match:
-                    year = year_match.group(1)
+    # User input for the base URL
+    base_url = st.text_input("Base URL", value="https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc60")
     
-    return probeg, skorosti, dvigatel, moshtnost, year
-
-# Streamlit App
-st.title("Mobile.bg Car Listings Scraper")
-
-# User input for base URL
-base_url = st.text_input("Enter the base URL for the car listings", "")
-
-if base_url:
-    st.write("Scraping data...")
-    
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    titles_list, prices_list, links_list, probeg_list = [], [], [], []
-    skorosti_list, dvigatel_list, moshtnost_list, year_list = [], [], [], []
-
-    # Loop through pages
-    page = 1
-    while True:
-        url = f"{base_url}/p-{page}" if page > 1 else base_url
-        for attempt in range(3):  # Retry logic
+    if st.button("Start Scraping"):
+        if not base_url:
+            st.error("Please enter a valid URL.")
+        else:
             try:
-                response = requests.get(url, headers=headers)
-                response.encoding = 'windows-1251'
-                if response.status_code == 200:
-                    break
-            except RequestException as e:
-                if attempt == 2:
-                    st.error(f"Failed to connect to {url}. Error: {e}")
-                    break
-                time.sleep(2)
+                # Placeholder: Call scraping functions and display results
+                response = requests.get(base_url, headers={'User-Agent': 'Mozilla/5.0'})
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                titles = [item.text for item in soup.find_all("h2", {"class": "title-class"})]  # Adjust selectors
+                prices = [extract_price(item.text) for item in soup.find_all("div", {"class": "price-class"})]
+                
+                data = pd.DataFrame({"Title": titles, "Price": prices})
+                st.write(data)
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        titles = soup.find_all("a", class_="title")
-        prices = soup.find_all("div", class_="price")
-        
-        if not titles or not prices:
-            st.warning("No listings found on this page. Please check the base URL or try again later.")
-            break
-        
-        for title, price in zip(titles, prices):
-            price_text = price.text.strip()
-            processed_price = extract_price(price_text)
-            if processed_price:
-                titles_list.append(title.text.strip())
-                prices_list.append(processed_price)
-                links_list.append("https:" + title['href'])
-                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], headers)
-                probeg_list.append(probeg)
-                skorosti_list.append(skorosti)
-                dvigatel_list.append(dvigatel)
-                moshtnost_list.append(moshtnost)
-                year_list.append(year)
-        
-        page += 1
-    
-    # Display DataFrame
-    df = pd.DataFrame({
-        "Title": titles_list,
-        "Price (лв.)": prices_list,
-        "Link": links_list,
-        "Пробег": probeg_list,
-        "Скоростна кутия": skorosti_list,
-        "Двигател": dvigatel_list,
-        "Мощност": moshtnost_list,
-        "Year": year_list
-    })
-    
-    st.write(df)
-
-    # Save to CSV
-    csv_file = f"{base_url.split('/')[-1]}_listings_with_details.csv"
-    df.to_csv(csv_file, index=False, encoding='utf-8-sig')
-    st.write(f"Data saved to {csv_file}")
-
-    # Aggregated Data
-    st.header("Aggregated Data")
-    if prices_list:
-        prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
-        max_price = max(prices_numeric)
-        min_price = min(prices_numeric)
-        average_price = statistics.mean(prices_numeric)
-        median_price = statistics.median(prices_numeric)
-
-        st.write(f"Total Listings: {len(prices_list)}")
-        st.write(f"Maximum Price: {max_price:.2f} лв.")
-        st.write(f"Minimum Price: {min_price:.2f} лв.")
-        st.write(f"Average Price: {average_price:.2f} лв.")
-        st.write(f"Median Price: {median_price:.2f} лв.")
-    else:
-        st.warning("No data available to calculate aggregated values.")
-
-    # Visualization
-    st.header("Visualizations")
-
-    # Histogram for prices
-    if prices_list:
-        st.subheader("Price Distribution")
-        plt.figure(figsize=(10, 5))
-        plt.hist(prices_numeric, bins=20, edgecolor='black')
-        plt.title("Price Distribution")
-        plt.xlabel("Price (лв.)")
-        plt.ylabel("Frequency")
-        st.pyplot(plt)
-
-    # Pie chart for transmission types
-    if skorosti_list:
-        st.subheader("Listings by Transmission Type")
-        skorosti_counts = pd.Series(skorosti_list).value_counts()
-        plt.figure(figsize=(6, 6))
-        plt.pie(skorosti_counts, labels=skorosti_counts.index, autopct='%1.1f%%', startangle=140)
-        plt.title("Transmission Types")
-        st.pyplot(plt)
-
-    # Pie chart for engine types
-    if dvigatel_list:
-        st.subheader("Listings by Engine Type")
-        dvigatel_counts = pd.Series(dvigatel_list).value_counts()
-        plt.figure(figsize=(6, 6))
-        plt.pie(dvigatel_counts, labels=dvigatel_counts.index, autopct='%1.1f%%', startangle=140)
-        plt.title("Engine Types")
-        st.pyplot(plt)
+if __name__ == "__main__":
+    main()
