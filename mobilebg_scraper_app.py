@@ -123,38 +123,51 @@ if st.button("Scrape Data"):
 
     # Display table of data
     st.subheader("Scraped Data")
-    st.dataframe(df)
+    if not df.empty:
+        st.dataframe(df)
 
-    # Provide download options
-    csv = df.to_csv(index=False).encode('utf-8-sig')
-    excel = BytesIO()
-    df.to_excel(excel, index=False, sheet_name="Listings")
-    excel.seek(0)
+        # Provide download options
+        csv = df.to_csv(index=False).encode('utf-8-sig')
+        excel = BytesIO()
+        df.to_excel(excel, index=False, sheet_name="Listings")
+        excel.seek(0)
 
-    st.download_button("Download as CSV", data=csv, file_name="listings.csv", mime="text/csv")
-    st.download_button("Download as Excel", data=excel, file_name="listings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("Download as CSV", data=csv, file_name="listings.csv", mime="text/csv")
+        st.download_button("Download as Excel", data=excel, file_name="listings.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # Aggregated data
-    max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
-    min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
+        # Aggregated data
+        st.subheader("Aggregated Data")
+        if prices_list:
+            max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+            min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
+            max_price_link = df[df["Price (лв.)"] == max_price]["Link"].values[0]
+            min_price_link = df[df["Price (лв.)"] == min_price]["Link"].values[0]
 
-    st.subheader("Aggregated Data")
-    st.write(f"Total Listings: {len(prices_list)}")
-    st.write(f"Maximum Price: {max_price} (Link: [View Listing]({max_price_link}))")
-    st.write(f"Minimum Price: {min_price} (Link: [View Listing]({min_price_link}))")
-    average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    st.write(f"Average Price: {average_price:.2f} лв.")
-    st.write(f"Median Price: {median_price:.2f} лв.")
+            st.write(f"Total Listings: {len(prices_list)}")
+            st.write(f"Maximum Price: {max_price} (Link: [View Listing]({max_price_link}))")
+            st.write(f"Minimum Price: {min_price} (Link: [View Listing]({min_price_link}))")
+            average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+            median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
+            st.write(f"Average Price: {average_price:.2f} лв.")
+            st.write(f"Median Price: {median_price:.2f} лв.")
 
-    # Visualization
-    st.subheader("Visualizations")
-    st.write("### Price Distribution")
-    fig, ax = plt.subplots()
-    ax.hist([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list], bins=20, edgecolor='black')
-    ax.set_title("Price Distribution")
-    ax.set_xlabel("Price (лв.)")
-    ax.set_ylabel("Frequency")
-    st.pyplot(fig)
+        else:
+            st.write("No price data available for aggregation.")
+
+        # Visualization
+        st.subheader("Visualizations")
+        if year_list and prices_list:
+            sorted_data = sorted(zip(year_list, prices_list), key=lambda x: x[0])
+            sorted_years, sorted_prices = zip(*sorted_data)
+            sorted_prices_numeric = [float(price.replace(' лв.', '').replace(',', '')) for price in sorted_prices]
+
+            fig, ax = plt.subplots()
+            ax.scatter(sorted_years, sorted_prices_numeric)
+            ax.set_title("Price vs Year")
+            ax.set_xlabel("Year")
+            ax.set_ylabel("Price (лв.)")
+            st.pyplot(fig)
+        else:
+            st.write("Not enough data for visualizations.")
+    else:
+        st.write("No data found. Please check the base URL.")
