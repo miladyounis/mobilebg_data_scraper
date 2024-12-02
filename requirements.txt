@@ -1,6 +1,5 @@
 streamlit
-requests
-beautifulsoup4
 pandas
-matplotlib
-statistics
+beautifulsoup4
+requests
+plotly
