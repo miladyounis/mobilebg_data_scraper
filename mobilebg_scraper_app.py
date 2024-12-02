@@ -5,8 +5,23 @@ import pandas as pd
 import re
 import statistics
 import plotly.express as px
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 st.set_page_config(page_title="Car Dashboard", layout="wide")
+
+# Enhanced request session with retry logic
+def create_request_session():
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,  # Retry up to 3 times
+        backoff_factor=1,  # Wait progressively longer between retries
+        status_forcelist=[429, 500, 502, 503, 504]  # Retry on these status codes
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 # Base scraping and processing functions
 def extract_price(price_div):
@@ -25,8 +40,8 @@ def extract_price(price_div):
 
     return price
 
-def extract_individual_data(url, headers):
-    response = requests.get(url, headers=headers)
+def extract_individual_data(url, session):
+    response = session.get(url)
     response.encoding = 'windows-1251'
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -57,13 +72,16 @@ def extract_individual_data(url, headers):
     return probeg, skorosti, dvigatel, moshtnost, year
 
 def scrape_data(base_url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    session = create_request_session()
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    session.headers.update(headers)
+
     page = 1
     titles, prices, links, probegs, transmissions, engines, powers, years = [], [], [], [], [], [], [], []
 
     while True:
         url = f"{base_url}/p-{page}" if page > 1 else base_url
-        response = requests.get(url, headers=headers)
+        response = session.get(url)
         response.encoding = 'windows-1251'
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -80,7 +98,7 @@ def scrape_data(base_url):
                 prices.append(processed_price)
                 links.append("https:" + title['href'])
 
-                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], headers)
+                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], session)
                 probegs.append(probeg)
                 transmissions.append(skorosti)
                 engines.append(dvigatel)
@@ -108,104 +126,37 @@ if st.button("Scrape Data"):
     with st.spinner("Scraping data..."):
         df = scrape_data(base_url)
 
-    # KPI Bar
-    st.write("### Price Statistics")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Listings Found", f"{len(df)}")
-    col2.metric("Maximum Price", f"{df['Price'].max():,.2f} лв.")
-    col3.metric("Minimum Price", f"{df['Price'].min():,.2f} лв.")
-    col4.metric("Average Price", f"{df['Price'].mean():,.2f} лв.")
-    col5.metric("Median Price", f"{statistics.median(df['Price']):,.2f} лв.")
+    # Gracefully handle empty data
+    if df.empty:
+        st.error("No data was found. Please check the URL or try again later.")
+    else:
+        # KPI Bar
+        st.write("### Price Statistics")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Listings Found", f"{len(df)}")
+        col2.metric("Maximum Price", f"{df['Price'].max():,.2f} лв.")
+        col3.metric("Minimum Price", f"{df['Price'].min():,.2f} лв.")
+        col4.metric("Average Price", f"{df['Price'].mean():,.2f} лв.")
+        col5.metric("Median Price", f"{statistics.median(df['Price']):,.2f} лв.")
 
-    # Visualizations
-    st.write("### Price Distribution")
-    fig_price_dist = px.histogram(
-        df,
-        x="Price",
-        nbins=20,
-        labels={"Price": "Price (лв.)"},
-        color_discrete_sequence=["#0070F2"]
-    )
-    fig_price_dist.update_layout(
-        xaxis_title="Price (лв.)",
-        yaxis_title="Frequency",
-        bargap=0.1
-    )
-    st.plotly_chart(fig_price_dist, use_container_width=True)
+        # Visualizations
+        st.write("### Price Distribution")
+        fig_price_dist = px.histogram(
+            df,
+            x="Price",
+            nbins=20,
+            labels={"Price": "Price (лв.)"},
+            color_discrete_sequence=["#0070F2"]
+        )
+        fig_price_dist.update_layout(
+            xaxis_title="Price (лв.)",
+            yaxis_title="Frequency",
+            title=None,
+            bargap=0.1
+        )
+        st.plotly_chart(fig_price_dist, use_container_width=True)
 
-        # Transmission Type Count (Interactive Pie Chart)
-    st.write("### Number of Listings by Transmission Type")
-    transmission_counts = df['Transmission'].value_counts().reset_index()
-    transmission_counts.columns = ['Transmission', 'Count']
-    fig_transmission = px.pie(
-        transmission_counts,
-        names="Transmission",
-        values="Count",
-        hole=0.4,
-        color_discrete_sequence=["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
-    )
-    fig_transmission.update_traces(
-        textposition="outside",  # Place labels and percentages outside the pie
-        textinfo="label+percent",  # Display both label and percentage
-        pull=[0.05] * len(transmission_counts)  # Slightly pull out all segments for better spacing
-    )
-    fig_transmission.update_layout(
-        showlegend=False,  # Disable the separate legend
-        title=None
-    )
-    st.plotly_chart(fig_transmission, use_container_width=True)
-
-    st.write("### Number of Listings by Engine Type")
-    engine_counts = df['Engine'].value_counts().reset_index()
-    engine_counts.columns = ['Engine', 'Count']
-    fig_engine = px.bar(
-        engine_counts,
-        x="Engine",
-        y="Count",
-        labels={"Engine": "Engine Type", "Count": "Count"},
-        color_discrete_sequence=["#EF553B"]
-    )
-    fig_engine.update_layout(
-        xaxis_title="Engine Type",
-        yaxis_title="Count",
-    )
-    st.plotly_chart(fig_engine, use_container_width=True)
-
-    st.write("### Price vs Mileage Scatter Plot")
-    valid_mileage = df.dropna(subset=["Mileage"])
-    valid_mileage["Mileage"] = valid_mileage["Mileage"].str.replace(r"[^\d.]", "", regex=True).astype(float)
-    valid_mileage = valid_mileage.sort_values(by="Mileage")
-    fig_scatter = px.scatter(
-        valid_mileage,
-        x="Mileage",
-        y="Price",
-        labels={"Mileage": "Mileage (km)", "Price": "Price (лв.)"},
-        color_discrete_sequence=["#00CC96"]
-    )
-    fig_scatter.update_layout(
-        xaxis_title="Mileage (km)",
-        yaxis_title="Price (лв.)",
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-    st.write("### Number of Cars per Year")
-    year_counts = df['Year'].value_counts().reset_index()
-    year_counts.columns = ['Year', 'Count']
-    year_counts = year_counts.sort_values(by="Year")
-    fig_year = px.bar(
-        year_counts,
-        x="Year",
-        y="Count",
-        labels={"Year": "Year", "Count": "Count"},
-        color_discrete_sequence=["#AB63FA"]
-    )
-    fig_year.update_layout(
-        xaxis_title="Year",
-        yaxis_title="Count",
-    )
-    st.plotly_chart(fig_year, use_container_width=True)
-
-    # Data Overview at the bottom
-    st.write("### Data Overview")
-    df_sorted = df.sort_values(by="Price", ascending=True)
-    st.dataframe(df, use_container_width=True)
+        # Data Overview at the bottom
+        st.write("### Data Overview")
+        df_sorted = df.sort_values(by="Price", ascending=True)  # Sort by price ascending
+        st.dataframe(df_sorted, use_container_width=True)
