@@ -12,7 +12,6 @@ from requests.packages.urllib3.util.retry import Retry
 
 st.set_page_config(page_title="Car Dashboard", layout="wide")
 
-@st.cache_data
 def extract_price(price_div):
     match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
@@ -29,7 +28,6 @@ def extract_price(price_div):
 
     return price
 
-@st.cache_data
 def extract_individual_data(url, headers, session):
     try:
         response = session.get(url, headers=headers, timeout=10)
@@ -65,7 +63,6 @@ def extract_individual_data(url, headers, session):
         st.error(f"Error fetching individual data: {e}")
         return None, None, None, None, None
 
-@st.cache_data
 def scrape_data(base_url, max_pages=3):
     headers = {'User-Agent': 'Mozilla/5.0'}
     session = requests.Session()
@@ -139,7 +136,93 @@ if st.button("Scrape Data"):
         col4.metric("Average Price", f"{df['Price'].mean():,.0f} лв.")
         col5.metric("Median Price", f"{statistics.median(df['Price']):,.0f} лв.")
 
-        st.write("### Data Overview")
-        st.dataframe(df, use_container_width=True)
+        st.write("### Filters")
+        filter_row1 = st.columns(3)
+        with filter_row1[0]:
+            transmission_filter = st.selectbox("Transmission Type", options=["All"] + list(df['Transmission'].dropna().unique()))
+        with filter_row1[1]:
+            year_filter = st.selectbox("Year", options=["All"] + sorted(df['Year'].dropna().unique()))
+        with filter_row1[2]:
+            engine_filter = st.selectbox("Engine Type", options=["All"] + list(df['Engine'].dropna().unique()))
 
-        st.download_button("Download Data as CSV", df.to_csv(index=False), "data.csv")
+        filter_row2 = st.columns(2)
+        with filter_row2[0]:
+            price_range = st.slider(
+                "Price Range (лв.)", 
+                min_value=int(df['Price'].min()), 
+                max_value=int(df['Price'].max()), 
+                value=(int(df['Price'].min()), int(df['Price'].max()))
+            )
+        with filter_row2[1]:
+            mileage_max = int(df['Mileage'].dropna().str.replace(r"[^\d.]", "", regex=True).astype(float).max())
+            mileage_range = st.slider("Mileage Range (km)", min_value=0, max_value=mileage_max, value=(0, mileage_max))
+
+        filtered_df = df[
+            ((df['Transmission'] == transmission_filter) | (transmission_filter == "All")) &
+            ((df['Year'] == year_filter) | (year_filter == "All")) &
+            ((df['Engine'] == engine_filter) | (engine_filter == "All")) &
+            (df['Price'].between(price_range[0], price_range[1])) &
+            (df['Mileage'].str.replace(r"[^\d.]", "", regex=True).astype(float).between(mileage_range[0], mileage_range[1]))
+        ]
+
+        if filtered_df.empty:
+            st.warning("No results found. Adjust your filters.")
+        else:
+            st.write("### Price Distribution")
+            fig_price_dist = px.histogram(
+                filtered_df,
+                x="Price",
+                nbins=20,
+                labels={"Price": "Price (лв.)"}
+            )
+            st.plotly_chart(fig_price_dist, use_container_width=True)
+
+            st.write("### Listings Breakdown")
+            chart_row1 = st.columns([1, 1, 1])
+
+            transmission_counts = filtered_df['Transmission'].value_counts().reset_index()
+            transmission_counts.columns = ['Transmission', 'Count']
+            fig_transmission = px.pie(
+                transmission_counts,
+                names="Transmission",
+                values="Count",
+                hole=0.4
+            )
+            chart_row1[0].plotly_chart(fig_transmission, use_container_width=True)
+
+            engine_counts = filtered_df['Engine'].value_counts().reset_index()
+            engine_counts.columns = ['Engine', 'Count']
+            fig_engine = px.bar(
+                engine_counts,
+                y="Engine",
+                x="Count",
+                orientation="h"
+            )
+            chart_row1[1].plotly_chart(fig_engine, use_container_width=True)
+
+            year_counts = filtered_df['Year'].value_counts().reset_index()
+            year_counts.columns = ['Year', 'Count']
+            year_counts = year_counts.sort_values(by="Year")
+            fig_year = px.bar(
+                year_counts,
+                y="Year",
+                x="Count",
+                orientation="h"
+            )
+            chart_row1[2].plotly_chart(fig_year, use_container_width=True)
+
+            st.write("### Price vs Mileage Scatter Plot")
+            valid_mileage = filtered_df.dropna(subset=["Mileage"])
+            valid_mileage["Mileage"] = valid_mileage["Mileage"].str.replace(r"[^\d.]", "", regex=True).astype(float)
+            fig_scatter = px.scatter(
+                valid_mileage,
+                x="Mileage",
+                y="Price",
+                labels={"Mileage": "Mileage (km)", "Price": "Price (лв.)"}
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+            st.write("### Data Overview")
+            st.dataframe(filtered_df, use_container_width=True)
+
+            st.download_button("Download Data as CSV", filtered_df.to_csv(index=False), "filtered_data.csv")
