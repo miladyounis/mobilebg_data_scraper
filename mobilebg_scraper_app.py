@@ -2,18 +2,13 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import statistics
-import matplotlib.pyplot as plt
 import re
+import statistics
+import plotly.express as px
 
-st.set_page_config(page_title="Car Listings Analyzer", layout="wide")
+st.set_page_config(page_title="Car Dashboard", layout="wide")
 
-# User input for base URL
-st.title("Car Listings Analyzer")
-base_url = st.text_input("Enter the base URL for car listings:", "")
-
-headers = {'User-Agent': 'Mozilla/5.0'}
-
+# Base scraping and processing functions
 def extract_price(price_div):
     match = re.search(r'(\d+[\s,]?\d*)\s*(лв\.|EUR)', price_div)
     if not match:
@@ -24,21 +19,20 @@ def extract_price(price_div):
 
     if 'Цената е без ДДС' in price_div:
         price *= 1.2  # Add 20% VAT
-        return f"{price:.2f} лв."
 
     if currency == 'EUR':
         price *= 1.95  # EUR to BGN conversion rate
-        return f"{price:.2f} лв."
 
-    return f"{price:.2f} лв."
+    return price
 
-def extract_individual_data(url):
+def extract_individual_data(url, headers):
     response = requests.get(url, headers=headers)
     response.encoding = 'windows-1251'
     soup = BeautifulSoup(response.text, "html.parser")
-    
+
+    probeg = skorosti = dvigatel = moshtnost = year = None
+
     main_params = soup.find("div", class_="mainCarParams")
-    probeg = skorosti = dvigatel = moshtnost = None
     if main_params:
         for item in main_params.find_all("div", class_="item"):
             label = item.find("div", class_="mpLabel").text.strip()
@@ -51,115 +45,167 @@ def extract_individual_data(url):
                 dvigatel = info
             elif label == "Мощност":
                 moshtnost = info
-    
+
     items = soup.find("div", class_="items")
-    year = None
     if items:
         for item in items.find_all("div", class_="item"):
             if "Дата на производство" in item.text:
                 year_match = re.search(r"(\d{4})", item.text)
                 if year_match:
                     year = year_match.group(1)
-    
+
     return probeg, skorosti, dvigatel, moshtnost, year
 
-if base_url:
-    st.write("Fetching data...")
-    
-    titles_list = []
-    prices_list = []
-    links_list = []
-    probeg_list = []
-    skorosti_list = []
-    dvigatel_list = []
-    moshtnost_list = []
-    year_list = []
-
+def scrape_data(base_url):
+    headers = {'User-Agent': 'Mozilla/5.0'}
     page = 1
+    titles, prices, links, probegs, transmissions, engines, powers, years = [], [], [], [], [], [], [], []
+
     while True:
         url = f"{base_url}/p-{page}" if page > 1 else base_url
         response = requests.get(url, headers=headers)
         response.encoding = 'windows-1251'
         soup = BeautifulSoup(response.text, "html.parser")
 
-        titles = soup.find_all("a", class_="title")
-        prices = soup.find_all("div", class_="price")
+        titles_on_page = soup.find_all("a", class_="title")
+        prices_on_page = soup.find_all("div", class_="price")
 
-        if not titles:
+        if not titles_on_page:
             break
 
-        for title, price in zip(titles, prices):
-            price_text = price.text.strip()
-            processed_price = extract_price(price_text)
+        for title, price_div in zip(titles_on_page, prices_on_page):
+            processed_price = extract_price(price_div.text.strip())
             if processed_price:
-                titles_list.append(title.text.strip())
-                prices_list.append(processed_price)
-                links_list.append("https:" + title['href'])
-                
-                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'])
-                probeg_list.append(probeg)
-                skorosti_list.append(skorosti)
-                dvigatel_list.append(dvigatel)
-                moshtnost_list.append(moshtnost)
-                year_list.append(year)
+                titles.append(title.text.strip())
+                prices.append(processed_price)
+                links.append("https:" + title['href'])
+
+                probeg, skorosti, dvigatel, moshtnost, year = extract_individual_data("https:" + title['href'], headers)
+                probegs.append(probeg)
+                transmissions.append(skorosti)
+                engines.append(dvigatel)
+                powers.append(moshtnost)
+                years.append(year)
 
         page += 1
 
-    df = pd.DataFrame({
-        "Title": titles_list,
-        "Price (лв.)": prices_list,
-        "Link": links_list,
-        "Пробег": probeg_list,
-        "Скоростна кутия": skorosti_list,
-        "Двигател": dvigatel_list,
-        "Мощност": moshtnost_list,
-        "Year": year_list
+    return pd.DataFrame({
+        "Title": titles,
+        "Price": prices,
+        "Link": links,
+        "Mileage": probegs,
+        "Transmission": transmissions,
+        "Engine": engines,
+        "Power": powers,
+        "Year": years,
     })
 
-    st.write("## Data Overview")
-    st.dataframe(df)
+# Streamlit UI
+st.title("Car Listings Dashboard")
+base_url = st.text_input("Enter the base URL for scraping:", "https://www.mobile.bg/obiavi/avtomobili-dzhipove/volvo/xc40")
 
-    st.write("## Aggregated Data")
-    max_price = max(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    min_price = min(prices_list, key=lambda x: float(x.replace(' лв.', '').replace(',', '')))
-    average_price = statistics.mean([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    median_price = statistics.median([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list])
-    st.write(f"**Total Listings:** {len(prices_list)}")
-    st.write(f"**Maximum Price:** {max_price}")
-    st.write(f"**Minimum Price:** {min_price}")
-    st.write(f"**Average Price:** {average_price:.2f} лв.")
-    st.write(f"**Median Price:** {median_price:.2f} лв.")
+if st.button("Scrape Data"):
+    with st.spinner("Scraping data..."):
+        df = scrape_data(base_url)
 
-    st.write("## Visualizations")
+    # KPI Bar
+    st.write("### Price Statistics")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Listings Found", f"{len(df)}")
+    col2.metric("Maximum Price", f"{df['Price'].max():,.2f} лв.")
+    col3.metric("Minimum Price", f"{df['Price'].min():,.2f} лв.")
+    col4.metric("Average Price", f"{df['Price'].mean():,.2f} лв.")
+    col5.metric("Median Price", f"{statistics.median(df['Price']):,.2f} лв.")
+
+    # Visualizations
     st.write("### Price Distribution")
-    plt.figure(figsize=(10, 6))
-    plt.hist([float(p.replace(' лв.', '').replace(',', '')) for p in prices_list], bins=20, edgecolor='black')
-    plt.title('Price Distribution')
-    plt.xlabel('Price (лв.)')
-    plt.ylabel('Frequency')
-    st.pyplot(plt)
+    fig_price_dist = px.histogram(
+        df,
+        x="Price",
+        nbins=20,
+        labels={"Price": "Price (лв.)"},
+        color_discrete_sequence=["#0070F2"]
+    )
+    fig_price_dist.update_layout(
+        xaxis_title="Price (лв.)",
+        yaxis_title="Frequency",
+        bargap=0.1
+    )
+    st.plotly_chart(fig_price_dist, use_container_width=True)
 
-    st.write("### Listings by Скоростна кутия")
-    skorosti_counts = pd.Series(skorosti_list).value_counts()
-    plt.figure(figsize=(8, 6))
-    plt.pie(skorosti_counts, labels=skorosti_counts.index, autopct='%1.1f%%')
-    plt.title('Listings by Скоростна кутия')
-    st.pyplot(plt)
+        # Transmission Type Count (Interactive Pie Chart)
+    st.write("### Number of Listings by Transmission Type")
+    transmission_counts = df['Transmission'].value_counts().reset_index()
+    transmission_counts.columns = ['Transmission', 'Count']
+    fig_transmission = px.pie(
+        transmission_counts,
+        names="Transmission",
+        values="Count",
+        hole=0.4,
+        color_discrete_sequence=["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
+    )
+    fig_transmission.update_traces(
+        textposition="outside",  # Place labels and percentages outside the pie
+        textinfo="label+percent",  # Display both label and percentage
+        pull=[0.05] * len(transmission_counts)  # Slightly pull out all segments for better spacing
+    )
+    fig_transmission.update_layout(
+        showlegend=False,  # Disable the separate legend
+        title=None
+    )
+    st.plotly_chart(fig_transmission, use_container_width=True)
 
-    st.write("### Listings by Двигател")
-    dvigatel_counts = pd.Series(dvigatel_list).value_counts()
-    plt.figure(figsize=(8, 6))
-    plt.pie(dvigatel_counts, labels=dvigatel_counts.index, autopct='%1.1f%%')
-    plt.title('Listings by Двигател')
-    st.pyplot(plt)
+    st.write("### Number of Listings by Engine Type")
+    engine_counts = df['Engine'].value_counts().reset_index()
+    engine_counts.columns = ['Engine', 'Count']
+    fig_engine = px.bar(
+        engine_counts,
+        x="Engine",
+        y="Count",
+        labels={"Engine": "Engine Type", "Count": "Count"},
+        color_discrete_sequence=["#EF553B"]
+    )
+    fig_engine.update_layout(
+        xaxis_title="Engine Type",
+        yaxis_title="Count",
+    )
+    st.plotly_chart(fig_engine, use_container_width=True)
 
-    st.write("### Price vs. Mileage")
-    prices_numeric = [float(p.replace(' лв.', '').replace(',', '')) for p in prices_list]
-    probeg_numeric = [float(p.replace(' км', '').replace(',', '').replace(' ', '')) for p in probeg_list if p is not None]
-    plt.figure(figsize=(10, 6))
-    plt.scatter(probeg_numeric, prices_numeric, alpha=0.7)
-    plt.title("Price vs. Mileage")
-    plt.xlabel("Mileage (km)")
-    plt.ylabel("Price (лв.)")
-    plt.grid(True)
-    st.pyplot(plt)
+    st.write("### Price vs Mileage Scatter Plot")
+    valid_mileage = df.dropna(subset=["Mileage"])
+    valid_mileage["Mileage"] = valid_mileage["Mileage"].str.replace(r"[^\d.]", "", regex=True).astype(float)
+    valid_mileage = valid_mileage.sort_values(by="Mileage")
+    fig_scatter = px.scatter(
+        valid_mileage,
+        x="Mileage",
+        y="Price",
+        labels={"Mileage": "Mileage (km)", "Price": "Price (лв.)"},
+        color_discrete_sequence=["#00CC96"]
+    )
+    fig_scatter.update_layout(
+        xaxis_title="Mileage (km)",
+        yaxis_title="Price (лв.)",
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+
+    st.write("### Number of Cars per Year")
+    year_counts = df['Year'].value_counts().reset_index()
+    year_counts.columns = ['Year', 'Count']
+    year_counts = year_counts.sort_values(by="Year")
+    fig_year = px.bar(
+        year_counts,
+        x="Year",
+        y="Count",
+        labels={"Year": "Year", "Count": "Count"},
+        color_discrete_sequence=["#AB63FA"]
+    )
+    fig_year.update_layout(
+        xaxis_title="Year",
+        yaxis_title="Count",
+    )
+    st.plotly_chart(fig_year, use_container_width=True)
+
+    # Data Overview at the bottom
+    st.write("### Data Overview")
+    df_sorted = df.sort_values(by="Price", ascending=True)
+    st.dataframe(df, use_container_width=True)
