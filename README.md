@@ -6,9 +6,7 @@ This is a fun project I am looking to upgrade with time that scrapes specific us
 
 ## Video Demonstration
 
-[![Watch the video](https://via.placeholder.com/640x360.png?text=Click+to+Watch+Video)](https://drive.google.com/file/d/1YkYd1MybGZxG3kAWZ5hAxTIx04zhGGzh/view?usp=sharing){:target="_blank"}
-
-Click the thumbnail above or [here](https://drive.google.com/file/d/1YkYd1MybGZxG3kAWZ5hAxTIx04zhGGzh/view?usp=sharing){:target="_blank"} to watch the video demonstration.
+https://drive.google.com/file/d/1YkYd1MybGZxG3kAWZ5hAxTIx04zhGGzh/view?usp=sharing
 
 ## Additional Information
 
